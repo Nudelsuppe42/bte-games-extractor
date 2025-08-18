@@ -133,7 +133,6 @@ client.on(Events.MessageCreate, async (message) => {
       return;
     }
   }
-  console.log(message.mentions.users.map((u) => u.username));
   // Parse and validate submission input
   const parsed = parseSubmission(
     message.content,
