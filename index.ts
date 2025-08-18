@@ -349,7 +349,7 @@ async function saveCache() {
     submissionCache.set(team, []);
   }
 }
-setInterval(saveCache, 1 * 60 * 1000); // Save every 1h
+setInterval(saveCache, 60 * 60 * 1000); // Save every 1h
 
 // --- Error Handling ---
 client.on(Events.Error, (error) => {
@@ -521,35 +521,3 @@ function constructSheetValues(
   };
 }
 
-// {
-//     "id": "1266141785743425587",
-//     "bounds": {
-//         "lat": {
-//             "max": 50,
-//             "min": 43
-//         },
-//         "lng": {
-//             "max": 24,
-//             "min": 14
-//         }
-//     },
-//     "base_id": 363,
-//     "static_base_id": 363,
-//     "sheet":"Balkans"
-// },
-// {
-//     "id": "1283876323168751729",
-//     "bounds": {
-//         "lat": {
-//             "max": 53,
-//             "min": 50
-//         },
-//         "lng": {
-//             "max": 0,
-//             "min": -4
-//         }
-//     },
-//     "base_id": 424,
-//     "static_base_id": 424,
-//     "sheet": "UK"
-// },
