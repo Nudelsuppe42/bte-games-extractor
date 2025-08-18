@@ -5,6 +5,7 @@ import {
   Events,
   GatewayIntentBits,
   Guild,
+  Message,
 } from "discord.js";
 import fs from "fs";
 import { google } from "googleapis";
@@ -107,20 +108,23 @@ client.on(Events.MessageCreate, async (message) => {
 
   console.log(`Message in ${team}: ${message.content}`);
 
- // Handle Resubmission Requests
+  // Handle Resubmission Requests
   if (message.content.toLowerCase().includes("resubmit")) {
     let channelId = config.rejudge_channel;
-    if (!channelId) {channelId = config.log_channel;}
+    if (!channelId) {
+      channelId = config.log_channel;
+    }
 
     const channel = client.channels.cache.get(channelId);
 
-    if (
-      channel &&
-      "send" in channel &&
-      typeof channel.send === "function"
-    ) {
+    if (channel && "send" in channel && typeof channel.send === "function") {
       await channel.send(
-       `Rejudge request from ${message.author.username} in ${team}:\n\`\`\`${message.content.replace("resubmit","").replace("[","").replace("]","")}\`\`\``
+        `Rejudge request from ${
+          message.author.username
+        } in ${team}:\n\`\`\`${message.content
+          .replace("resubmit", "")
+          .replace("[", "")
+          .replace("]", "")}\`\`\``
       );
       await message.react("✅").catch(console.error);
       console.log(
@@ -129,11 +133,12 @@ client.on(Events.MessageCreate, async (message) => {
       return;
     }
   }
-
+  console.log(message.mentions.users.map((u) => u.username));
   // Parse and validate submission input
   const parsed = parseSubmission(
     message.content,
     message.author.username,
+    message.mentions.users.map((u) => u.username),
     team
   );
   if ("error" in parsed && parsed.error) {
@@ -141,14 +146,13 @@ client.on(Events.MessageCreate, async (message) => {
       `Invalid submission format in channel ${team}: ${parsed.message}`
     );
     await message.react("❌").catch(console.error);
-    const replyMsg = await message.reply(
+    sendReply(
+      message,
       (parsed.userError ||
         "Your submission format is invalid. Please ensure it follows the correct format.") +
         "\n\nPlease delete your message and try again with the correct format."
     );
-    setTimeout(() => {
-      replyMsg.delete().catch(() => {});
-    }, 5 * 60 * 1000);
+
     return;
   }
 
@@ -173,40 +177,18 @@ client.on(Events.MessageCreate, async (message) => {
     submissions[0].id !== lastId + 1
   ) {
     await message.react("❌").catch(console.error);
-    const replyMsg = await message.reply({
-      content: `Submission ID must be exactly 1 greater than your previous submission (last: ${lastId}).`,
-      embeds: [
-        {
-          title: "Example Submission",
-          description: `#<id> <lat>, <lng> [trial] [road] [field]\n\n**Example:**\n #${
-            lastId + 1
-          } 37.7749 -122.4194 road\n #${
-            lastId + 1
-          } 37.7749 -122.4194 field\n #${
-            lastId + 1
-          } 37.7749 -122.4194 trial\n\n-# Supports ID ranges like #100-110`,
-          color: 0xff0000, // Red for error
-        },
-        {
-          title: "Example Resubmission",
-          description: `#<id> [resubmit]\n\n**Example:**\n #${
-            lastId + 1
-          } resubmit
-          -# Supports ID ranges like #100-110`,
-          color: 0xff0000, // Red for error
-        },
-      ],
-    });
-    setTimeout(() => {
-      replyMsg.delete().catch(() => {});
-    }, 5 * 60 * 1000);
+    sendReply(
+      message,
+      `Submission ID must be exactly 1 greater than previous submission (${lastId}).`
+    );
     return;
   }
 
   if (submissions.length > 20) {
     await message.react("❌").catch(console.error);
-    await message.reply(
-      `Please only submit up to 20 submissions at once. Split your submissions into smaller batches.`
+    sendReply(
+      message,
+      `Too many submissions at once. Please limit to 20.  Split your submissions into smaller batches.`
     );
     return;
   }
@@ -214,24 +196,21 @@ client.on(Events.MessageCreate, async (message) => {
   for (let i = 1; i < submissions.length; ++i) {
     if (!submissions[i] || !submissions[i - 1]) {
       await message.react("❌").catch(console.error);
-      const replyMsg = await message.reply(
+      sendReply(
+        message,
         `Submission IDs must be consecutive. (Internal error: missing submission object)`
       );
-      setTimeout(() => {
-        replyMsg.delete().catch(() => {});
-      }, 5 * 60 * 1000);
       return;
     }
     if (submissions[i]!.id !== submissions[i - 1]!.id + 1) {
       await message.react("❌").catch(console.error);
-      const replyMsg = await message.reply(
+
+      sendReply(
+        message,
         `Submission IDs must be consecutive. Found gap between #${
           submissions[i - 1]!.id
         } and #${submissions[i]!.id}.`
       );
-      setTimeout(() => {
-        replyMsg.delete().catch(() => {});
-      }, 5 * 60 * 1000);
       return;
     }
   }
@@ -249,12 +228,11 @@ client.on(Events.MessageCreate, async (message) => {
       lng > bounds.lng.max
     ) {
       await message.react("❌").catch(console.error);
-      const replyMsg = await message.reply(
+
+      sendReply(
+        message,
         `Coordinates out of bounds for this channel. Latitude must be between ${bounds.lat.min} and ${bounds.lat.max}, longitude between ${bounds.lng.min} and ${bounds.lng.max}.`
       );
-      setTimeout(() => {
-        replyMsg.delete().catch(() => {});
-      }, 5 * 60 * 1000);
       return;
     }
   }
@@ -363,7 +341,9 @@ async function saveCache() {
       })),
     },
   });
-  console.log(`Updated Google Sheets: ${googleSheetsResult.data.totalUpdatedRows} rows`);
+  console.log(
+    `Updated Google Sheets: ${googleSheetsResult.data.totalUpdatedRows} rows`
+  );
 
   if (
     logChannel &&
@@ -394,6 +374,7 @@ client.login(process.env.BOT_TOKEN);
 function parseSubmission(
   message: string,
   user: string,
+  additionalUsers: string[],
   team: string
 ): SubmissionInput | SubmissionError {
   let trial = false;
@@ -456,7 +437,20 @@ function parseSubmission(
     for (let id = startId; id <= endId; ++id) {
       ids.push(id);
     }
-    return { user, ids, lat, lng, trial, team, road, field };
+
+    // add additional users
+    // from mentions
+
+    return {
+      user: [user].concat(additionalUsers).join("|"),
+      ids,
+      lat,
+      lng,
+      trial,
+      team,
+      road,
+      field,
+    };
   } else {
     // fallback to single id
     match = cleaned.match(/^#?\s*((?::[a-z]+: ?)+|\d+),?\s*(.*)$/i);
@@ -585,3 +579,24 @@ function constructSheetValues(
             "static_base_id": 424,
             "sheet": "UK"
         }*/
+
+async function sendReply(message: Message, content: string) {
+  const replyMsg = await message.reply({
+    content,
+    embeds: [
+      {
+        title: "Example Submission",
+        description: `#<id> <lat>, <lng> [trial] [road] [field] [mention builders]\n\n**Example:**\n #123 37.7749 -122.4194 road\n #123 37.7749 -122.4194 field\n #123 37.7749 -122.4194 trial\n #123 37.7749 -122.4194 @additionalBuilder1 @additionalBuilder2\n\n-# Supports ID ranges like #100-110`,
+        color: 0xff0000, // Red for error
+      },
+      {
+        title: "Example Resubmission",
+        description: `#<id> [resubmit]\n\n**Example:**\n #123 resubmit\n\n-# Supports ID ranges like #100-110`,
+        color: 0xff0000, // Red for error
+      },
+    ],
+  });
+  setTimeout(() => {
+    replyMsg.delete().catch(() => {});
+  }, 5 * 60 * 1000);
+}
