@@ -7,7 +7,9 @@ import {
     Guild,
 } from "discord.js";
 import fs from "fs";
+import { google } from "googleapis";
 import path from "path";
+import { authorizeGoogle } from "./index-google";
 
 // --- Type Definitions ---
 type ChannelConfig = {
@@ -49,6 +51,7 @@ type SubmissionError = {
 // --- Config & State ---
 const config = require("./config.json");
 const channels = new Map<string, string>(); // channel ID -> team name
+const channels2 = new Map<string, string>(); // team name -> channel ID
 const channelBounds = new Map<string, ChannelConfig["bounds"]>(); // channel ID -> bounds
 const lastSubmissionId = new Map<string, number>(); // team -> last id
 const submissionCache = new Map<string, Submission[]>(); // team -> submissions
@@ -79,8 +82,10 @@ client.once(Events.ClientReady, (readyClient) => {
     const discordChannel = client.channels.cache.get(ch.id);
     if (discordChannel && "name" in discordChannel) {
       channels.set(ch.id, (discordChannel as any).name);
+      channels2.set((discordChannel as any).name, ch.id);
     } else {
       channels.set(ch.id, ch.id); // fallback to ID if name not found
+      channels2.set(ch.id, ch.id); // fallback to ID if name not found
     }
     console.log(
       `Submit: ${ch.id} -> ${channels.get(ch.id)}; Base ID: #${ch.base_id}`
@@ -256,7 +261,7 @@ client.on(Events.MessageCreate, async (message) => {
 });
 
 // --- CSV Saving ---
-function saveCacheAsCSV() {
+async function saveCache() {
   // Update config.submit_channels[].base_id with the last submission id for each channel
   for (const ch of config.submit_channels) {
     const lastId = lastSubmissionId.get(ch.id) ?? ch.base_id ?? 0;
@@ -268,12 +273,22 @@ function saveCacheAsCSV() {
     JSON.stringify(config, null, 4),
     "utf8"
   );
+
   let hasSubmissions = false;
   const rows: string[] = [
     "team,id,round,lat,lng,user,reviewer,size,road,field,complexity,quality,hindrances,trial,2x",
   ];
+
+  const rowsForSheet: { values: string[][]; range: string }[] = [];
+
   for (const [team, submissions] of submissionCache.entries()) {
     if (submissions.length > 0) hasSubmissions = true;
+    if (submissions.length === 0) continue;
+
+    // Construct values for Google Sheets
+    const sheetValues = constructSheetValues(team, submissions);
+    rowsForSheet.push(sheetValues);
+
     for (const sub of submissions) {
       rows.push(
         `${team},${sub.id},${config.current_round},${sub.lat},${sub.lng},${
@@ -284,7 +299,9 @@ function saveCacheAsCSV() {
       );
     }
   }
+
   if (!hasSubmissions) return;
+
   const csvRows = rows.join("\n");
   const exportsDir = path.join(__dirname, "exports");
   if (!fs.existsSync(exportsDir)) {
@@ -295,6 +312,28 @@ function saveCacheAsCSV() {
     .replaceAll(":", "_")}.csv`;
   const fullDir = path.join(exportsDir, fileName);
   fs.writeFileSync(fullDir, csvRows, "utf8");
+
+  console.log(`Saved cache to ${fullDir}`);
+
+  const auth = await authorizeGoogle();
+  if (!auth) {
+    console.error("Failed to authorize Google API");
+    return;
+  }
+  const sheets = google.sheets({ version: "v4", auth: auth as any });
+
+  const googleSheetsResult = await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: config.spreadsheet_id,
+    requestBody: {
+      valueInputOption: "USER_ENTERED",
+      data: rowsForSheet.map((shV) => ({
+        range: shV.range,
+        values: shV.values,
+      })),
+    },
+  });
+  console.log(`Updated Google Sheets: ${googleSheetsResult.data.totalUpdatedRows} rows`);
+
   if (
     logChannel &&
     "send" in logChannel &&
@@ -305,13 +344,12 @@ function saveCacheAsCSV() {
       content: `Cache saved to ${fileName}`,
     });
   }
-  console.log(`Saved cache to ${fullDir}`);
   // Clear the cache after saving
   for (const team of submissionCache.keys()) {
     submissionCache.set(team, []);
   }
 }
-setInterval(saveCacheAsCSV, 3 * 60 * 60 * 1000); // Save every 3h
+setInterval(saveCache, 1 * 60 * 1000); // Save every 1h
 
 // --- Error Handling ---
 client.on(Events.Error, (error) => {
@@ -441,3 +479,77 @@ function parseSubmission(
     return { user, ids: [id], lat, lng, trial, team, road, field };
   }
 }
+
+// --- Utility to construct google sheets update values ---
+function constructSheetValues(
+  team: string,
+  submissions: Submission[]
+): { values: string[][]; range: string } {
+  let values = [];
+
+  const channelId = channels2.get(team);
+
+  for (const sub of submissions) {
+    if (sub.team !== team) {
+      continue; // Skip submissions not for this team
+    }
+    values.push([
+      sub.id.toString(),
+      config.current_round.toString(),
+      sub.lat,
+      sub.lng,
+      sub.user,
+      "", // Reviewer
+      sub.field || sub.road ? "n" : "", // Size
+      sub.road ? "" : "n", // Road
+      sub.field ? "" : "n", //Field
+      "", // Complexity
+      "", // Quality
+      "n",
+      sub.trial ? "y" : "n",
+      "n",
+    ]);
+  }
+  console.log(
+    `Constructed ${values.length} values for team ${team} (${channelId})`
+  );
+  return {
+    values,
+    range: `${
+      config.submit_channels.find((ch: any) => ch.id == channelId).sheet
+    }!A${parseInt(values.length > 0 && values[0] ? values[0][0] : 1) + 4}`,
+  };
+}
+
+// {
+//     "id": "1266141785743425587",
+//     "bounds": {
+//         "lat": {
+//             "max": 50,
+//             "min": 43
+//         },
+//         "lng": {
+//             "max": 24,
+//             "min": 14
+//         }
+//     },
+//     "base_id": 363,
+//     "static_base_id": 363,
+//     "sheet":"Balkans"
+// },
+// {
+//     "id": "1283876323168751729",
+//     "bounds": {
+//         "lat": {
+//             "max": 53,
+//             "min": 50
+//         },
+//         "lng": {
+//             "max": 0,
+//             "min": -4
+//         }
+//     },
+//     "base_id": 424,
+//     "static_base_id": 424,
+//     "sheet": "UK"
+// },
