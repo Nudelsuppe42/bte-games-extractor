@@ -187,6 +187,14 @@ client.on(Events.MessageCreate, async (message) => {
           } 37.7749 -122.4194 trial\n\n-# Supports ID ranges like #100-110`,
           color: 0xff0000, // Red for error
         },
+        {
+          title: "Example Resubmission",
+          description: `#<id> [resubmit]\n\n**Example:**\n #${
+            lastId + 1
+          } resubmit
+          -# Supports ID ranges like #100-110`,
+          color: 0xff0000, // Red for error
+        },
       ],
     });
     setTimeout(() => {
