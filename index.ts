@@ -379,7 +379,7 @@ function parseSubmission(
   let trial = false;
   let road = false;
   let field = false;
-  let cleaned = message.trim();
+  let cleaned = message.trim().replaceAll("\n"," ");
 
   if (/\btrial\b|\[trial\]$/i.test(cleaned)) {
     trial = true;
@@ -470,7 +470,7 @@ function parseSubmission(
           error: true,
           message: "Invalid submission format",
           userError:
-            "Couldn't parse the ID of your submission. Please ensure it starts with a number or # followed by a number.",
+            "Couldn't parse the ID of your submission. Please ensure it starts with a number or # followed by a number.\n-# 1 ",
         };
       }
     }
@@ -480,7 +480,7 @@ function parseSubmission(
         error: true,
         message: "Invalid ID",
         userError:
-          "Couldn't parse the ID of your submission. Please ensure it starts with a number or # followed by a number.",
+          "Couldn't parse the ID of your submission. Please ensure it starts with a number or # followed by a number.\n-# 2 ",
       };
     let lat = "",
       lng = "";
@@ -497,7 +497,7 @@ function parseSubmission(
         error: true,
         message: "Invalid coordinates",
         userError:
-          "Couldn't parse the coordinates of your submission. Please ensure they are in the format 'latitude, longitude' or 'latitude longitude'.",
+          "Couldn't parse the coordinates of your submission. Please ensure they are in the format 'latitude, longitude' or 'latitude longitude'. \n-# 3",
       };
     }
     return { user, ids: [id], lat, lng, trial, team, road, field };
