@@ -265,7 +265,7 @@ function saveCacheAsCSV() {
         submissionCache.set(team, []);
     }
 }
-setInterval(saveCacheAsCSV, 60 * 60 * 1000); // Save every 5 minutes
+setInterval(saveCacheAsCSV, 3 * 60 * 60 * 1000); // Save every 3h
 
 // --- Error Handling ---
 client.on(Events.Error, (error) => {
