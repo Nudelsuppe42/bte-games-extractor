@@ -1,10 +1,10 @@
 // --- Imports ---
 import {
-    type Channel,
-    Client,
-    Events,
-    GatewayIntentBits,
-    Guild,
+  type Channel,
+  Client,
+  Events,
+  GatewayIntentBits,
+  Guild,
 } from "discord.js";
 import fs from "fs";
 import { google } from "googleapis";
@@ -106,6 +106,29 @@ client.on(Events.MessageCreate, async (message) => {
   const bounds = channelBounds.get(message.channel.id);
 
   console.log(`Message in ${team}: ${message.content}`);
+
+ // Handle Resubmission Requests
+  if (message.content.toLowerCase().includes("resubmit")) {
+    let channelId = config.rejudge_channel;
+    if (!channelId) {channelId = config.log_channel;}
+
+    const channel = client.channels.cache.get(channelId);
+
+    if (
+      channel &&
+      "send" in channel &&
+      typeof channel.send === "function"
+    ) {
+      await channel.send(
+       `Rejudge request from ${message.author.username} in ${team}:\n\`\`\`${message.content.replace("resubmit","").replace("[","").replace("]","")}\`\`\``
+      );
+      await message.react("✅").catch(console.error);
+      console.log(
+        `Rejudge request sent to ${channelId} from ${message.author.username} in ${team}`
+      );
+      return;
+    }
+  }
 
   // Parse and validate submission input
   const parsed = parseSubmission(
@@ -521,3 +544,36 @@ function constructSheetValues(
   };
 }
 
+/*
+ {
+            "id": "1266141785743425587",
+            "bounds": {
+                "lat": {
+                    "max": 50,
+                    "min": 43
+                },
+                "lng": {
+                    "max": 24,
+                    "min": 14
+                }
+            },
+            "base_id": 363,
+            "static_base_id": 363,
+            "sheet":"Balkans"
+        },
+        {
+            "id": "1283876323168751729",
+            "bounds": {
+                "lat": {
+                    "max": 53,
+                    "min": 50
+                },
+                "lng": {
+                    "max": 0,
+                    "min": -4
+                }
+            },
+            "base_id": 424,
+            "static_base_id": 424,
+            "sheet": "UK"
+        }*/
