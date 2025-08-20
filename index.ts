@@ -338,7 +338,7 @@ async function saveCache() {
     .toISOString()
     .replaceAll(":", "_")}.csv`;
   const fullDir = path.join(exportsDir, fileName);
-  // fs.writeFileSync(fullDir, csvRows, "utf8");
+  fs.writeFileSync(fullDir, csvRows, "utf8");
 
   log(`Saved cache to ${fullDir}`);
 
@@ -369,7 +369,6 @@ async function saveCache() {
     typeof logChannel.send === "function"
   ) {
     logChannel.send({
-      files: [{ attachment: fullDir, name: fileName }],
       content: `Cache saved to ${fileName}`,
     });
   }
