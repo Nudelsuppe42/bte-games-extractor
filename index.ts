@@ -77,7 +77,7 @@ const client = new Client({
 
 // --- Ready Event ---
 client.once(Events.ClientReady, (readyClient) => {
-  console.log(`Ready! Logged in as ${readyClient.user.tag}`);
+  log(`Ready! Logged in as ${readyClient.user.tag}`);
   // Set channel names in the channels map using Discord channel name
   for (const ch of config.submit_channels) {
     const discordChannel = client.channels.cache.get(ch.id);
@@ -88,12 +88,10 @@ client.once(Events.ClientReady, (readyClient) => {
       channels.set(ch.id, ch.id); // fallback to ID if name not found
       channels2.set(ch.id, ch.id); // fallback to ID if name not found
     }
-    console.log(
-      `Submit: ${ch.id} -> ${channels.get(ch.id)}; Base ID: #${ch.base_id}`
-    );
+    log(`Submit: ${ch.id} -> ${channels.get(ch.id)}; Base ID: #${ch.base_id}`);
   }
   logChannel = client.channels.cache.get(config.log_channel);
-  console.log("-------------------------------");
+  log("-------------------------------");
 });
 
 // --- Message Handler ---
@@ -106,7 +104,30 @@ client.on(Events.MessageCreate, async (message) => {
   if (!team) return;
   const bounds = channelBounds.get(message.channel.id);
 
-  console.log(`Message in ${team}: ${message.content}`);
+  log(`Message in ${team}: ${message.content}`);
+
+  if (
+    message.content.toLowerCase().startsWith("!setlastid") &&
+    message.member?.roles.cache.has("700540641406484520")
+  ) {
+    const lastIdToSet = parseInt(message.content.split(" ")[1] || "0");
+    if (isNaN(lastIdToSet) || lastIdToSet <= 0) {
+      await message.react("❌").catch(console.error);
+    } else {
+      lastSubmissionId.set(message.channel.id, lastIdToSet);
+      await message.react("✅").catch(console.error);
+      sendReply(
+        message,
+        `Last submission ID for ${team} set to #${lastIdToSet}.`, 1/60
+      ).catch(console.error);
+      setTimeout(() => {
+        if (message && message.deletable) message.delete().catch(() => {});
+      }, 10 * 1000);
+      log(`Last submission ID for ${team} set to #${lastIdToSet}`);
+    }
+
+    return;
+  }
 
   // Handle Resubmission Requests
   if (message.content.toLowerCase().includes("resubmit")) {
@@ -127,7 +148,7 @@ client.on(Events.MessageCreate, async (message) => {
           .replace("]", "")}\`\`\``
       );
       await message.react("✅").catch(console.error);
-      console.log(
+      log(
         `Rejudge request sent to ${channelId} from ${message.author.username} in ${team}`
       );
       return;
@@ -141,16 +162,14 @@ client.on(Events.MessageCreate, async (message) => {
     team
   );
   if ("error" in parsed && parsed.error) {
-    console.log(
-      `Invalid submission format in channel ${team}: ${parsed.message}`
-    );
+    log(`Invalid submission format in channel ${team}: ${parsed.message}`);
     await message.react("❌").catch(console.error);
     sendReply(
       message,
       (parsed.userError ||
         "Your submission format is invalid. Please ensure it follows the correct format.") +
         "\n\nPlease delete your message and try again with the correct format."
-    );
+    ).catch(console.error);
 
     return;
   }
@@ -263,7 +282,7 @@ client.on(Events.MessageCreate, async (message) => {
   lastSubmissionId.set(message.channelId, currentId);
 
   await message.react("✅").catch(console.error);
-  console.log(
+  log(
     `Submission(s) added to cache for channel ${team}. Total submissions: ${cache.length}`
   );
 });
@@ -319,9 +338,9 @@ async function saveCache() {
     .toISOString()
     .replaceAll(":", "_")}.csv`;
   const fullDir = path.join(exportsDir, fileName);
-  fs.writeFileSync(fullDir, csvRows, "utf8");
+  // fs.writeFileSync(fullDir, csvRows, "utf8");
 
-  console.log(`Saved cache to ${fullDir}`);
+  log(`Saved cache to ${fullDir}`);
 
   const auth = await authorizeGoogle();
   if (!auth) {
@@ -340,7 +359,7 @@ async function saveCache() {
       })),
     },
   });
-  console.log(
+  log(
     `Updated Google Sheets: ${googleSheetsResult.data.totalUpdatedRows} rows`
   );
 
@@ -359,7 +378,7 @@ async function saveCache() {
     submissionCache.set(team, []);
   }
 }
-setInterval(saveCache, 60 * 60 * 1000); // Save every 1h
+setInterval(saveCache, 5 * 60 * 1000); // Save every 5min
 
 // --- Error Handling ---
 client.on(Events.Error, (error) => {
@@ -379,7 +398,7 @@ function parseSubmission(
   let trial = false;
   let road = false;
   let field = false;
-  let cleaned = message.trim().replaceAll("\n"," ");
+  let cleaned = message.trim().replaceAll("\n", " ");
 
   if (/\btrial\b|\[trial\]$/i.test(cleaned)) {
     trial = true;
@@ -534,9 +553,7 @@ function constructSheetValues(
       "n",
     ]);
   }
-  console.log(
-    `Constructed ${values.length} values for team ${team} (${channelId})`
-  );
+  log(`Constructed ${values.length} values for team ${team} (${channelId})`);
   return {
     values,
     range: `${
@@ -579,23 +596,29 @@ function constructSheetValues(
             "sheet": "UK"
         }*/
 
-async function sendReply(message: Message, content: string) {
-  const replyMsg = await message.reply({
-    content,
-    embeds: [
-      {
-        title: "Example Submission",
-        description: `#<id> <lat>, <lng> [trial] [road] [field] [mention builders]\n\n**Example:**\n #123 37.7749 -122.4194 road\n #123 37.7749 -122.4194 field\n #123 37.7749 -122.4194 trial\n #123 37.7749 -122.4194 @additionalBuilder1 @additionalBuilder2\n\n-# Supports ID ranges like #100-110`,
-        color: 0xff0000, // Red for error
-      },
-      {
-        title: "Example Resubmission",
-        description: `#<id> [resubmit]\n\n**Example:**\n #123 resubmit\n\n-# Supports ID ranges like #100-110`,
-        color: 0xff0000, // Red for error
-      },
-    ],
-  });
+async function sendReply(message: Message, content: string,delayInMin:number = 5) {
+  const replyMsg = await message
+    .reply({
+      content,
+      embeds: [
+        {
+          title: "Example Submission",
+          description: `#<id> <lat>, <lng> [trial] [road] [field] [mention builders]\n\n**Example:**\n #123 37.7749 -122.4194 road\n #123 37.7749 -122.4194 field\n #123 37.7749 -122.4194 trial\n #123 37.7749 -122.4194 @additionalBuilder1 @additionalBuilder2\n\n-# Supports ID ranges like #100-110`,
+          color: 0xff0000, // Red for error
+        },
+        {
+          title: "Example Resubmission",
+          description: `#<id> [resubmit]\n\n**Example:**\n #123 resubmit\n\n-# Supports ID ranges like #100-110`,
+          color: 0xff0000, // Red for error
+        },
+      ],
+    })
+    .catch(console.error);
   setTimeout(() => {
-    replyMsg.delete().catch(() => {});
-  }, 5 * 60 * 1000);
+    if (replyMsg && replyMsg.deletable) replyMsg.delete().catch(() => {});
+  }, delayInMin * 60 * 1000);
+}
+
+function log(message: string) {
+  console.log(`[${new Date().toISOString()}] ${message}`);
 }
