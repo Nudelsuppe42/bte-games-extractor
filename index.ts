@@ -118,7 +118,8 @@ client.on(Events.MessageCreate, async (message) => {
       await message.react("✅").catch(console.error);
       sendReply(
         message,
-        `Last submission ID for ${team} set to #${lastIdToSet}.`, 1/60
+        `Last submission ID for ${team} set to #${lastIdToSet}.`,
+        1 / 60
       ).catch(console.error);
       setTimeout(() => {
         if (message && message.deletable) message.delete().catch(() => {});
@@ -349,19 +350,23 @@ async function saveCache() {
   }
   const sheets = google.sheets({ version: "v4", auth: auth as any });
 
-  const googleSheetsResult = await sheets.spreadsheets.values.batchUpdate({
-    spreadsheetId: config.spreadsheet_id,
-    requestBody: {
-      valueInputOption: "USER_ENTERED",
-      data: rowsForSheet.map((shV) => ({
-        range: shV.range,
-        values: shV.values,
-      })),
-    },
-  });
-  log(
-    `Updated Google Sheets: ${googleSheetsResult.data.totalUpdatedRows} rows`
-  );
+  try {
+    const googleSheetsResult = await sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: config.spreadsheet_id,
+      requestBody: {
+        valueInputOption: "USER_ENTERED",
+        data: rowsForSheet.map((shV) => ({
+          range: shV.range,
+          values: shV.values,
+        })),
+      },
+    });
+    log(
+      `Updated Google Sheets: ${googleSheetsResult.data.totalUpdatedRows} rows`
+    );
+  } catch (error) {
+    console.error("Failed to update Google Sheets:", error);
+  }
 
   if (
     logChannel &&
@@ -595,7 +600,11 @@ function constructSheetValues(
             "sheet": "UK"
         }*/
 
-async function sendReply(message: Message, content: string,delayInMin:number = 5) {
+async function sendReply(
+  message: Message,
+  content: string,
+  delayInMin: number = 5
+) {
   const replyMsg = await message
     .reply({
       content,
